@@ -40,7 +40,8 @@ void doit(int fd) // fd = file descriptor = 파일 식별자
 {
   // 정적파일인지 아닌지를 판단해주기 위한 변수
   int is_static;
-  // 파일에 대한 정보를 가지고 있는 구조체
+
+  // 파일에 대한 정보(모든정보 name , 누가 가지고 있다가 넣었는지 etc ...)를 가지고 있는 구조체
   struct stat sbuf;
   // HTTP request를 받아들이기 위한 버퍼 및 각각의 요청 메서드, URI, HTTP version을 저장
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
@@ -48,11 +49,13 @@ void doit(int fd) // fd = file descriptor = 파일 식별자
   // 'filenam'은 HTTP request에서 추출한 파일의 이름을 저장
   // 'cgiargs'는 HTTP request에서 추출한 CGI 인자들을 저장
   char filename[MAXLINE], cgiargs[MAXLINE];
+
   // rio 라이브러리를 사용하기 위한 구조체. rio 라이브러리는 표준 C 라이브러리의 I/O함수를 래핑하여, 더욱 안정적인 I/O를 제공.
+  // fd랑 연결을 하기 위해 사용되는 구조체.
   rio_t rio;
 
   /* Read request line and headers */
-  // rio(robust I/O (Rio)) 초기화
+  // rio(robust I/O (Rio)) fd로 초기화(연결)
   Rio_readinitb(&rio, fd);
   // buf에서 client request 읽어들이기
   // rio_readlineb함수를 사용해서 요청 라인을 읽어들임
@@ -60,8 +63,10 @@ void doit(int fd) // fd = file descriptor = 파일 식별자
   printf("Request headers:\n");
   // request header 출력
   printf("%s", buf);
+  printf("header : %s\n",buf);
   // buf에 있는 데이터를 method, uri, version에 담기
   sscanf(buf, "%s %s %s", method, uri, version);
+  printf("version : %s\n",version);
 
   // method가 GET이 아니라면 error message 출력 + main 루틴으로 회귀
   // 그 후에 연결을 닫고 다음 요청을 기다림
@@ -69,7 +74,10 @@ void doit(int fd) // fd = file descriptor = 파일 식별자
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
   }
-  // 다른 요청 헤더들을 무시한다.
+
+  // 이 함수는 header 정보를 무시하고 그냥 버립니다. 
+  // 이 함수를 호출하지 않고도 서버는 정상적으로 동작하지만, 이 함수를 사용하면 클라이언트에서 전송된 header 정보를 얻을 수 있습니다.
+  // header와 body를 나누기 위한 함수.
   read_requesthdrs(&rio);
 
   /* URI를 파일 이름과 비어 있을 수도 있는 CGI 인자 스트링으로 분석하고, 요청이 정적 또는 동적 컨텐츠를 위한 것인지 나타내는 플래그 */
@@ -82,6 +90,7 @@ void doit(int fd) // fd = file descriptor = 파일 식별자
   // request file이 static contents이면 실행
   if (is_static) {
     // file이 정규파일이 아니거나 사용자 읽기가 안되면 error message 출력
+    // st_mode : 파일 읽고 쓰고 실행하는 권한을 나타내는 ( 0 or 1 )
     if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {// 이 파일이 보통 파일 이라는 것과 읽기 권한을 가지고 있는지를 검증
       clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
       return;
@@ -233,7 +242,7 @@ void serve_static(int fd, char *filename, int filesize, char *method)
 }
 #endif
   /* * get_filetype - Derive file type from filename*/
-  void get_filetype(char *filename, char *filetype)
+void get_filetype(char *filename, char *filetype)
   {
   if (strstr(filename, ".html"))
     strcpy(filetype, "text/html");
@@ -309,8 +318,9 @@ int main(int argc, char **argv)
       client에서 server로 넘어올 때 add정보를 가지고 올 것이라고 가정
       accept 함수는 연결되면 식별자 connfd를 return.
     */
-    connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);                       // SA: type of struct socketaddr
+    connfd = accept(listenfd, (SA *)&clientaddr, &clientlen);// SA: type of struct socketaddr
     // client socket에서 hostname과 port number를 스트링으로 변환
+    // 즉, ip -> 도메인 주소(hostname) return값은 hostname , port번호
     getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
     doit(connfd); // 트랜잭션 수행 즉, 클라이언트가 요청한 작업을 수행하고, 클라이언트에게 응답을 보내는 작업을 수행합니다.
