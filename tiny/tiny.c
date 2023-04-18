@@ -70,7 +70,7 @@ void doit(int fd) // fd = file descriptor = 파일 식별자
 
   // method가 GET이 아니라면 error message 출력 + main 루틴으로 회귀
   // 그 후에 연결을 닫고 다음 요청을 기다림
-  if (strcasecmp(method, "GET")) {
+  if (strcasecmp(method, "GET") && strcasecmp(method, "HEAD")) {
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
   }
@@ -150,20 +150,28 @@ void read_requesthdrs(rio_t *rp)
 int parse_uri(char *uri, char *filename, char *cgiargs)
 {
   char *ptr;
-
+  printf("--- 파싱이요 ---\n");
+  printf("uri : %s\n", uri);
   // parsing 결과, static file request인 경우 (uri에 cgi-bin이 포함이 되어 있지 않으면)
   if (!strstr(uri, "cgi-bin")) {
+    printf("--- 파싱결과 정적이요 ---\n");
     strcpy(cgiargs, "");
+    printf("cgiargs : %s\n",cgiargs);
     strcpy(filename, ".");
     strcat(filename, uri);
-    // request에서 특정 static contents를 요구하지 않은 경우 (home page 반환)
+    printf("filename : %s\n",filename);
+    // URI가 '/' 문자로 끝난다면
     if (uri[strlen(uri)-1] == '/') {
+      printf("--- home page 반환이요 ---\n");
+      // 기본 파일 이름을 추가한다
       strcat(filename, "home.html");
     }
     return 1;
   }
   // parsing 결과, dynamic file request인 경우
   else {
+    // ~ 186까지 모든 CGI 인자들을 추출하고F
+    printf("--- 파싱결과 동적이요 ---\n");
     // uri부분에서 file name과 args를 구분하는 ?위치 찾기
     ptr = index(uri, '?');
     // ?가 있으면
@@ -178,6 +186,7 @@ int parse_uri(char *uri, char *filename, char *cgiargs)
       strcpy(cgiargs, "");
     }
     // filename에 uri담기
+    // 나머지 URI 부분을 상대 리눅스 파일 이름으로 변환한다.
     strcpy(filename, ".");
     strcat(filename, uri);
     return 0;
@@ -202,8 +211,11 @@ void serve_static(int fd, char *filename, int filesize)
   printf("%s", buf);
 
   /* Send response body to client */
+  // 읽기 위해서 filename을 오픈하고 식별자를 얻어온다.
   srcfd = Open(filename, O_RDONLY, 0);
+  // 요청한 파일을 가상 메모리 영역으로 매핑한다.
   srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+  // 파일을 메모리로 매핑한 후에 더 이상 이식별자는 필요없으며, 그래서 이 파일을 닫는다./
   Close(srcfd);
   rio_writen(fd, srcp, filesize);
   Munmap(srcp, filesize);
@@ -211,13 +223,16 @@ void serve_static(int fd, char *filename, int filesize)
 
 #else
 // HEAD method 처리를 위한 인자 추가
+// 정적 컨텐츠를 클라이언트에게 서비스한다.
+// 지역 파일의 내용을 포함하고 있는 본체를 갖는 HTTP응답을 보낸다 
 void serve_static(int fd, char *filename, int filesize, char *method)
 {
   int srcfd;
   char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
-  /* Send response headers to client */
+  /* 파일의 접미어 부분을 검사해 파일 타입 결정*/
   get_filetype(filename, filetype);
+  // 클라이언트에 응답 줄과 응답 헤더를 보냄(~238),빈 줄 한 개가 헤더를 종료하고 있다
   sprintf(buf, "HTTP/1.0 200 OK\r\n");
   sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
   sprintf(buf, "%sConnection: close\r\n", buf);
@@ -229,13 +244,18 @@ void serve_static(int fd, char *filename, int filesize, char *method)
 
   if(strcasecmp(method, "GET") == 0) {
     /* Send response body to client */
+    // 읽기 위해서 filename을 오픈하고 식별자를 얻어온다.
     srcfd = Open(filename, O_RDONLY, 0);
+    // Mmap 함수는 요청한 파일을 가상 메모리 영역으로 매핑한다.
     // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
     // solved problem 11.9
     srcp = malloc(filesize);
     Rio_readn(srcfd, srcp, filesize);
+    // 파일을 메모리로 매핑한 후에 더 이상 이 식별자는 필요없으며, 그래서 이 파일을 닫는다.
     Close(srcfd);
+    // 주소 srcp에서 시작하는 filesize바이트(물론, 이것은 요청한 파일에 매핑되어 있다.)를 클라이언트의 연결 식별자로 복사한다.
     Rio_writen(fd, srcp, filesize);
+    // 매핑된 가상메모리 주소를 반환한다.
     // Munmap(srcp, filesize);
     free(srcp);
   }
